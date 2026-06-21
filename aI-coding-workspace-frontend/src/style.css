@@ -1,0 +1,105 @@
+:root {
+  --ide-bg: #1e1e2e;
+  --ide-bg-elevated: #252537;
+  --ide-bg-hover: #2a2a3e;
+  --ide-bg-active: #313142;
+  --ide-border: #313142;
+  --ide-border-light: #3a3a4e;
+  --ide-text: #cdd6f4;
+  --ide-text-dim: #7f849c;
+  --ide-text-bright: #ffffff;
+  --ide-accent: #89b4fa;
+  --ide-accent-bg: rgba(137, 180, 250, 0.12);
+  --ide-green: #a6e3a1;
+  --ide-red: #f38ba8;
+  --ide-yellow: #f9e2af;
+  --ide-purple: #cba6f7;
+  --ide-orange: #fab387;
+
+  --ide-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
+  --ide-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+
+  font: 14px/1.5 var(--ide-sans);
+  color: var(--ide-text);
+  background: var(--ide-bg);
+  color-scheme: dark;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+}
+
+/* 滚动条 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--ide-border-light);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ide-text-dim);
+}
+
+/* Element Plus 深色覆盖 */
+.el-message-box,
+.el-notification {
+  background: var(--ide-bg-elevated) !important;
+  border: 1px solid var(--ide-border) !important;
+}
+
+/* 通用工具类 */
+.flex {
+  display: flex;
+}
+.flex-col {
+  display: flex;
+  flex-direction: column;
+}
+.flex-1 {
+  flex: 1;
+}
+.items-center {
+  align-items: center;
+}
+.justify-center {
+  justify-content: center;
+}
+.justify-between {
+  justify-content: space-between;
+}
+.gap-2 {
+  gap: 8px;
+}
+.gap-3 {
+  gap: 12px;
+}
+.full-h {
+  height: 100%;
+}
+.full-w {
+  width: 100%;
+}
