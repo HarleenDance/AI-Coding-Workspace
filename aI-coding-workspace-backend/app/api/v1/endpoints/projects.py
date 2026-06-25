@@ -61,6 +61,37 @@ def _should_ignore(path: Path) -> bool:
     return False
 
 
+def _scan_project_files(actual_root: Path, project_id: UUID) -> list[ProjectFile]:
+    """扫描项目目录，返回 ProjectFile 记录列表。"""
+    file_records = []
+    for path in sorted(actual_root.rglob("*")):
+        if not path.is_file():
+            continue
+        if _should_ignore(path.relative_to(actual_root)):
+            continue
+        if path.stat().st_size > MAX_FILE_SIZE:
+            continue
+
+        rel_path = str(path.relative_to(actual_root)).replace("\\", "/")
+        try:
+            text_content = path.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+
+        pf = ProjectFile(
+            id=uuid4(),
+            project_id=project_id,
+            path=rel_path,
+            language=_detect_language(rel_path),
+            size_bytes=path.stat().st_size,
+            content_hash=str(hash(text_content) % (10**12)),
+            symbol_index={},
+        )
+        pf.symbol_index = {"content": text_content}
+        file_records.append(pf)
+    return file_records
+
+
 @router.get("")
 async def list_projects(session: DbSession) -> dict:
     """列出所有项目。"""
@@ -86,14 +117,7 @@ async def upload_project(
     session: DbSession,
     file: UploadFile = File(...),
 ) -> dict:
-    """上传 ZIP 项目并解压、扫描文件结构、存入数据库。
-
-    流程：
-    1. 接收 zip 文件
-    2. 解压到 runtime/projects/{uuid}/
-    3. 扫描所有文件，存入 project_files 表
-    4. 创建 project 记录
-    """
+    """上传 ZIP 项目并解压、扫描文件结构、存入数据库。"""
     if not file.filename or not file.filename.endswith(".zip"):
         raise HTTPException(status_code=400, detail="只支持 .zip 文件")
 
@@ -102,11 +126,10 @@ async def upload_project(
         raise HTTPException(status_code=400, detail="ZIP 文件不能超过 100MB")
 
     project_id = uuid4()
-    project_name = Path(file.filename).stem  # 去掉 .zip
+    project_name = Path(file.filename).stem
     project_root = settings.runtime_dir / "projects" / str(project_id)
     project_root.mkdir(parents=True, exist_ok=True)
 
-    # 解压
     try:
         with zipfile.ZipFile(BytesIO(content)) as zf:
             zf.extractall(project_root)
@@ -120,36 +143,8 @@ async def upload_project(
     else:
         actual_root = project_root
 
-    # 扫描文件
-    file_records = []
-    for path in sorted(actual_root.rglob("*")):
-        if not path.is_file():
-            continue
-        if _should_ignore(path.relative_to(actual_root)):
-            continue
-        if path.stat().st_size > MAX_FILE_SIZE:
-            continue
+    file_records = _scan_project_files(actual_root, project_id)
 
-        rel_path = str(path.relative_to(actual_root)).replace("\\", "/")
-        try:
-            text_content = path.read_text(encoding="utf-8", errors="ignore")
-        except Exception:
-            continue
-
-        pf = ProjectFile(
-            id=uuid4(),
-            project_id=project_id,
-            path=rel_path,
-            language=_detect_language(rel_path),
-            size_bytes=path.stat().st_size,
-            content_hash=str(hash(text_content) % (10**12)),
-            symbol_index={},
-        )
-        # 用 symbol_index 临时存文件内容（避免新增表，快速实现）
-        pf.symbol_index = {"content": text_content}
-        file_records.append(pf)
-
-    # 创建 project
     project = Project(
         id=project_id,
         name=project_name,
@@ -169,6 +164,84 @@ async def upload_project(
         "name": project_name,
         "file_count": len(file_records),
         "message": f"项目上传成功，共 {len(file_records)} 个文件",
+    }
+
+
+@router.post("/upload-folder")
+async def upload_folder(
+    session: DbSession,
+    files: list[UploadFile] = File(...),
+    folder_name: str = "",
+) -> dict:
+    """上传整个文件夹（多文件），保留目录结构。
+
+    前端通过 <input type="file" webkitdirectory> 选择文件夹，
+    浏览器会把每个文件的 relativePath 放在自定义 header 或 query 中。
+    这里通过 FormData 的字段名编码路径。
+    """
+    if not files:
+        raise HTTPException(status_code=400, detail="没有文件")
+
+    project_id = uuid4()
+    project_name = folder_name or files[0].filename or "uploaded-folder"
+    project_root = settings.runtime_dir / "projects" / str(project_id)
+    project_root.mkdir(parents=True, exist_ok=True)
+
+    saved_count = 0
+    for f in files:
+        # 路径来源优先级：header X-File-Path > filename
+        rel_path = f.headers.get("x-file-path") or f.filename or ""
+        if not rel_path:
+            continue
+
+        rel_path = rel_path.replace("\\", "/")
+        # 去掉常见的浏览器前缀（如 C:\\fakepath\\）
+        if "/" not in rel_path and "\\" not in rel_path:
+            # 单文件，没有目录信息，跳过
+            pass
+
+        # 安全：禁止路径穿越
+        target = project_root / rel_path
+        try:
+            target.resolve().relative_to(project_root.resolve())
+        except ValueError:
+            continue
+
+        if _should_ignore(Path(rel_path)):
+            continue
+
+        content = await f.read()
+        if len(content) > MAX_FILE_SIZE:
+            continue
+
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(content)
+        saved_count += 1
+
+    if saved_count == 0:
+        raise HTTPException(status_code=400, detail="没有有效的文件被保存")
+
+    file_records = _scan_project_files(project_root, project_id)
+
+    project = Project(
+        id=project_id,
+        name=project_name,
+        original_zip_name=project_name,
+        root_path=str(project_root),
+        description=f"Folder upload with {len(file_records)} files",
+        is_indexed=False,
+    )
+    session.add(project)
+    for pf in file_records:
+        session.add(pf)
+
+    await session.commit()
+
+    return {
+        "id": str(project_id),
+        "name": project_name,
+        "file_count": len(file_records),
+        "message": f"文件夹上传成功，共 {len(file_records)} 个文件",
     }
 
 

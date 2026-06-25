@@ -24,6 +24,16 @@ import type {
 export * from './types'
 
 export const api = {
+  /** 通用 GET（带完整路径，已含 query） */
+  httpGet<T>(url: string): Promise<T> {
+    return http.get<T>(url).then((r) => r.data)
+  },
+
+  /** 通用 POST */
+  httpPost<T = unknown>(url: string, body: unknown): Promise<T> {
+    return http.post<T>(url, body).then((r) => r.data)
+  },
+
   checkHealth(): Promise<HealthResponse> {
     return http.get<HealthResponse>('/health/db').then((r) => r.data)
   },
@@ -86,6 +96,26 @@ export const api = {
       .post<UploadResponse>('/projects/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
         timeout: 300_000, // 上传+解压+索引可能较慢
+      })
+      .then((r) => r.data)
+  },
+
+  /**
+   * 上传文件夹（多文件，保留目录结构）。
+   * 利用 webkitdirectory 获取每个文件的 webkitRelativePath。
+   */
+  uploadFolder(files: File[], folderName: string): Promise<UploadResponse> {
+    const formData = new FormData()
+    for (const f of files) {
+      // 用 webkitRelativePath 作为路径，通过 header 传给后端
+      const relPath = (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name
+      formData.append('files', f, relPath)
+    }
+    formData.append('folder_name', folderName)
+    return http
+      .post<UploadResponse>('/projects/upload-folder', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 300_000,
       })
       .then((r) => r.data)
   },
@@ -247,6 +277,25 @@ export const api = {
   }> {
     return http
       .post(`/projects/${projectId}/search`, { query, mode }, { timeout: 60_000 })
+      .then((r) => r.data)
+  },
+
+  /**
+   * AI 代码补全（非流式）。
+   */
+  completeCode(payload: {
+    prefix: string
+    suffix: string
+    language: string
+    file_path: string
+    model_id?: string
+    temperature?: number
+    max_tokens?: number
+  }): Promise<{ text: string; stop: boolean }> {
+    return http
+      .post<{ text: string; stop: boolean }>('/completion', payload, {
+        timeout: 20_000,
+      })
       .then((r) => r.data)
   },
 }

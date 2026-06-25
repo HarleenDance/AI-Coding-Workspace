@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import CodeEditor from './CodeEditor.vue'
+import MarkdownView from './MarkdownView.vue'
 import { useAppStore } from '@/stores/app'
 
 const store = useAppStore()
@@ -17,6 +18,18 @@ const language = computed(() => {
 const code = computed(() => {
   if (showDiff.value) return ''
   return store.currentFile?.content || welcomeContent
+})
+
+// Markdown 预览切换（仅对 .md 文件可用）
+const isMarkdown = computed(() => {
+  const path = store.currentFile?.path || ''
+  return path.toLowerCase().endsWith('.md')
+})
+const previewMode = ref<'edit' | 'preview' | 'split'>('edit')
+
+// 切换文件时重置预览模式
+watch(() => store.activeTabPath, () => {
+  if (!isMarkdown.value) previewMode.value = 'edit'
 })
 
 const dirty = ref(false)
@@ -95,28 +108,68 @@ const welcomeContent = `# Welcome to AI Coding Workspace
           Save (Ctrl+S)
         </el-button>
       </div>
+
+      <!-- Markdown 预览切换 -->
+      <div v-if="isMarkdown && !showDiff" class="md-toggle">
+        <el-radio-group v-model="previewMode" size="small">
+          <el-radio-button value="edit"><el-icon><Edit /></el-icon></el-radio-button>
+          <el-radio-button value="split"><el-icon><CopyDocument /></el-icon></el-radio-button>
+          <el-radio-button value="preview"><el-icon><View /></el-icon></el-radio-button>
+        </el-radio-group>
+      </div>
     </div>
 
     <!-- 编辑器区 -->
-    <div class="editor-area">
+    <div class="editor-area" :class="{ 'split-mode': isMarkdown && previewMode === 'split' && !showDiff }">
       <div v-if="store.fileLoading" class="loading-mask">
         <el-icon class="is-loading" :size="24"><Loading /></el-icon>
       </div>
+
+      <!-- Diff 模式 -->
       <CodeEditor
         v-if="showDiff"
         :original="''"
         :modified="store.vibePlan?.diff || ''"
         language="diff"
       />
+
+      <!-- Markdown 预览模式：只看渲染结果 -->
+      <div v-else-if="isMarkdown && previewMode === 'preview' && store.currentFile" class="md-preview-only">
+        <MarkdownView :content="editedContent || code" />
+      </div>
+
+      <!-- Markdown 分屏模式：左编辑 + 右预览 -->
+      <template v-else-if="isMarkdown && previewMode === 'split' && store.currentFile">
+        <div class="md-split-editor">
+          <CodeEditor
+            :key="store.activeTabPath"
+            :code="code"
+            :language="language"
+            :read-only="false"
+            :file-path="store.currentFile?.path || ''"
+            @change="onCodeChange"
+            @append="(code: string) => store.appendCodeToContext(store.currentFile?.path || '', code)"
+          />
+        </div>
+        <div class="md-split-divider"></div>
+        <div class="md-split-preview">
+          <MarkdownView :content="editedContent || code" />
+        </div>
+      </template>
+
+      <!-- 普通编辑模式 -->
       <CodeEditor
         v-else-if="store.currentFile"
         :key="store.activeTabPath"
         :code="code"
         :language="language"
         :read-only="false"
+        :file-path="store.currentFile?.path || ''"
         @change="onCodeChange"
         @append="(code: string) => store.appendCodeToContext(store.currentFile?.path || '', code)"
       />
+
+      <!-- 欢迎屏 -->
       <div v-else class="welcome-screen">
         <div class="welcome-content">
           <el-icon :size="48" color="var(--ide-accent)"><Cpu /></el-icon>
@@ -157,9 +210,9 @@ const welcomeContent = `# Welcome to AI Coding Workspace
 .tab-bar {
   display: flex;
   align-items: center;
-  background: var(--ide-bg-elevated);
+  background: var(--ide-bg-darker);
   border-bottom: 1px solid var(--ide-border);
-  height: 36px;
+  height: 34px;
   overflow-x: auto;
 }
 
@@ -171,16 +224,18 @@ const welcomeContent = `# Welcome to AI Coding Workspace
   height: 100%;
   font-size: 12px;
   color: var(--ide-text-dim);
-  background: var(--ide-bg-elevated);
+  background: transparent;
   border-right: 1px solid var(--ide-border);
   cursor: pointer;
   white-space: nowrap;
   position: relative;
   flex-shrink: 0;
+  transition: all 0.12s ease;
 }
 
 .tab-item:hover {
-  background: var(--ide-bg-hover);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--ide-text);
 }
 
 .tab-item.active {
@@ -188,14 +243,15 @@ const welcomeContent = `# Welcome to AI Coding Workspace
   color: var(--ide-text-bright);
 }
 
-.tab-item.active::after {
+.tab-item.active::before {
   content: '';
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
-  height: 1px;
+  height: 2px;
   background: var(--ide-accent);
+  box-shadow: 0 0 6px var(--ide-accent-glow);
 }
 
 .tab-icon {
@@ -231,10 +287,57 @@ const welcomeContent = `# Welcome to AI Coding Workspace
   flex-shrink: 0;
 }
 
+.md-toggle {
+  margin-left: auto;
+  padding-right: 8px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+.save-area + .md-toggle {
+  margin-left: 0;
+}
+
 .editor-area {
   flex: 1;
   overflow: hidden;
   position: relative;
+}
+
+/* Markdown 分屏模式 */
+.editor-area.split-mode {
+  display: flex;
+  flex-direction: row;
+}
+
+.md-split-editor {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.md-split-divider {
+  width: 4px;
+  background: var(--ide-border);
+  cursor: col-resize;
+  flex-shrink: 0;
+}
+
+.md-split-preview {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  padding: 16px 20px;
+  background: var(--ide-bg);
+}
+
+/* Markdown 纯预览模式 */
+.md-preview-only {
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  padding: 24px 32px;
+  background: var(--ide-bg);
 }
 
 .loading-mask {
@@ -289,12 +392,14 @@ kbd {
 .status-bar {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 14px;
   padding: 0 12px;
-  height: 24px;
-  background: var(--ide-accent);
-  color: #1e1e2e;
-  font-size: 12px;
+  height: 22px;
+  background: var(--ide-bg-darker);
+  color: var(--ide-text-dim);
+  font-size: 11px;
+  border-top: 1px solid var(--ide-border);
+  flex-shrink: 0;
 }
 
 .status-item {

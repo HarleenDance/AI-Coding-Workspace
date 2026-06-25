@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useAppStore } from '@/stores/app'
-import type { AgentConfigCreate } from '@/api'
+import type { AgentConfig, AgentConfigCreate } from '@/api'
 
 const store = useAppStore()
 
@@ -16,7 +16,31 @@ const formData = ref<AgentConfigCreate>({
   tools: ['rag_search'],
 })
 
-const avatarOptions = ['🤖', '💻', '🏗️', '🔍', '📝', '🚀', '🐛', '⚡', '🎨', '📊', '🔧', '🧪']
+const avatarOptions = ['🤖', '💻', '🏗️', '🔍', '📝', '🚀', '🐛', '⚡', '🎨', '📊', '🔧', '🧪', '🧬', '📈', '🔬', '🌐']
+
+// Agent 分组规则：根据 name 关键词分类
+const agentGroups = computed(() => {
+  const groups: Record<string, AgentConfig[]> = {
+    '💻 代码开发': [],
+    '📊 数据分析': [],
+    '🧬 AI 工程': [],
+    '🛠️ 自定义': [],
+  }
+  for (const a of store.agents) {
+    const name = a.name
+    if (name.includes('编程') || name.includes('代码') || name.includes('架构') || name.includes('审查')) {
+      groups['💻 代码开发'].push(a)
+    } else if (name.includes('数据') || name.includes('分析')) {
+      groups['📊 数据分析'].push(a)
+    } else if (name.includes('Meta') || name.includes('Agent') || name.includes('文档')) {
+      groups['🧬 AI 工程'].push(a)
+    } else {
+      groups[a.is_builtin ? '💻 代码开发' : '🛠️ 自定义'].push(a)
+    }
+  }
+  // 过滤空组
+  return Object.entries(groups).filter(([, v]) => v.length > 0)
+})
 
 function selectAgent(id: string) {
   store.currentAgentId = id
@@ -40,11 +64,6 @@ async function submitCreate() {
   await store.createAgent(formData.value)
   showCreate.value = false
 }
-
-async function removeAgent(id: string, isBuiltin: boolean) {
-  if (isBuiltin) return
-  await store.deleteAgent(id)
-}
 </script>
 
 <template>
@@ -54,26 +73,33 @@ async function removeAgent(id: string, isBuiltin: boolean) {
       :model-value="store.currentAgentId"
       size="small"
       class="agent-select"
+      placeholder="选择智能体"
       @change="selectAgent"
     >
       <template #prefix>
         <span class="agent-avatar">{{ store.currentAgent?.avatar || '🤖' }}</span>
       </template>
-      <el-option
-        v-for="agent in store.agents"
-        :key="agent.id"
-        :value="agent.id"
-        :label="agent.name"
+      <el-option-group
+        v-for="[groupName, agents] in agentGroups"
+        :key="groupName"
+        :label="groupName"
       >
-        <div class="agent-option">
-          <span class="agent-option-avatar">{{ agent.avatar }}</span>
-          <div class="agent-option-info">
-            <span class="agent-option-name">{{ agent.name }}</span>
-            <span class="agent-option-desc">{{ agent.description }}</span>
+        <el-option
+          v-for="agent in agents"
+          :key="agent.id"
+          :value="agent.id"
+          :label="agent.name"
+        >
+          <div class="agent-option">
+            <span class="agent-option-avatar">{{ agent.avatar }}</span>
+            <div class="agent-option-info">
+              <span class="agent-option-name">{{ agent.name }}</span>
+              <span class="agent-option-desc">{{ agent.description }}</span>
+            </div>
+            <el-tag v-if="agent.is_builtin" size="small" type="info" effect="plain">内置</el-tag>
           </div>
-          <el-tag v-if="agent.is_builtin" size="small" type="info">内置</el-tag>
-        </div>
-      </el-option>
+        </el-option>
+      </el-option-group>
     </el-select>
 
     <el-tooltip content="创建智能体" placement="bottom">

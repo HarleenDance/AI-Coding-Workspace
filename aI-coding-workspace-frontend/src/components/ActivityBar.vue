@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 
-export type ActivityView = 'explorer' | 'search' | 'git' | 'ai' | 'settings'
+export type ActivityView = 'explorer' | 'search' | 'git' | 'yuque' | 'ai' | 'settings'
 
 const props = defineProps<{
   modelValue: ActivityView
@@ -11,6 +11,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update:modelValue': [value: ActivityView]
+  'toggle-terminal': []
 }>()
 
 const { t } = useI18n()
@@ -20,6 +21,7 @@ const items = computed(() => [
   { id: 'explorer' as const, icon: 'Files', label: t('activity.explorer'), badge: 0 },
   { id: 'search' as const, icon: 'Search', label: t('activity.search'), badge: 0 },
   { id: 'git' as const, icon: 'Connection', label: t('activity.git'), badge: 0 },
+  { id: 'yuque' as const, icon: 'Reading', label: '语雀文档', badge: 0 },
   { id: 'ai' as const, icon: 'ChatDotRound', label: t('activity.ai'), badge: store.chatLoading ? 1 : 0 },
 ])
 
@@ -43,8 +45,16 @@ function select(id: ActivityView) {
       <span v-if="item.badge" class="badge">{{ item.badge }}</span>
     </div>
 
-    <!-- 底部设置 -->
+    <!-- 底部终端 -->
     <div class="spacer"></div>
+    <div
+      class="activity-item"
+      @click="emit('toggle-terminal')"
+    >
+      <el-tooltip content="终端 (Ctrl+`)" placement="right">
+        <el-icon :size="22"><Monitor /></el-icon>
+      </el-tooltip>
+    </div>
     <div
       class="activity-item"
       :class="{ active: modelValue === 'settings' }"
@@ -59,61 +69,67 @@ function select(id: ActivityView) {
 
 <style scoped>
 .activity-bar {
-  width: 48px;
-  background: var(--ide-bg-darker, #11111b);
+  width: 44px;
+  background: var(--ide-bg-darker);
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 4px 0;
+  padding: 6px 0;
   flex-shrink: 0;
   border-right: 1px solid var(--ide-border);
 }
 
 .activity-item {
-  width: 48px;
-  height: 48px;
+  width: 44px;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   color: var(--ide-text-dim);
   position: relative;
-  transition: color 0.15s;
+  transition: all 0.15s ease;
+  border-radius: 8px;
+  margin: 1px 4px;
 }
 
 .activity-item:hover {
   color: var(--ide-text);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .activity-item.active {
   color: var(--ide-text-bright);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .activity-item.active::before {
   content: '';
   position: absolute;
-  left: 0;
-  top: 8px;
-  bottom: 8px;
-  width: 2px;
+  left: -4px;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
   background: var(--ide-accent);
-  border-radius: 0 2px 2px 0;
+  border-radius: 0 3px 3px 0;
+  box-shadow: 0 0 8px var(--ide-accent-glow);
 }
 
 .badge {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  top: 7px;
+  right: 7px;
   background: var(--ide-accent);
-  color: #1e1e2e;
-  font-size: 10px;
-  min-width: 16px;
-  height: 16px;
-  border-radius: 8px;
+  color: var(--ide-bg-darker);
+  font-size: 9px;
+  min-width: 14px;
+  height: 14px;
+  border-radius: 7px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-weight: 600;
+  font-weight: 700;
+  padding: 0 3px;
 }
 
 .spacer {

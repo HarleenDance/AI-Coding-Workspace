@@ -1,25 +1,29 @@
 :root {
-  --ide-bg: #1e1e2e;
-  --ide-bg-elevated: #252537;
-  --ide-bg-hover: #2a2a3e;
-  --ide-bg-active: #313142;
-  --ide-border: #313142;
-  --ide-border-light: #3a3a4e;
-  --ide-text: #cdd6f4;
-  --ide-text-dim: #7f849c;
+  /* Trae 风格配色：更深、更柔和、层次更清晰 */
+  --ide-bg: #181818;
+  --ide-bg-elevated: #1f1f1f;
+  --ide-bg-hover: #2a2d2e;
+  --ide-bg-active: #2c2c2c;
+  --ide-bg-darker: #141414;
+  --ide-border: #2a2a2a;
+  --ide-border-light: #333333;
+  --ide-text: #d4d4d4;
+  --ide-text-dim: #8b8b8b;
   --ide-text-bright: #ffffff;
-  --ide-accent: #89b4fa;
-  --ide-accent-bg: rgba(137, 180, 250, 0.12);
-  --ide-green: #a6e3a1;
-  --ide-red: #f38ba8;
-  --ide-yellow: #f9e2af;
-  --ide-purple: #cba6f7;
-  --ide-orange: #fab387;
+  --ide-accent: #4d9eff;
+  --ide-accent-bg: rgba(77, 158, 255, 0.1);
+  --ide-accent-glow: rgba(77, 158, 255, 0.4);
+  --ide-green: #4ec9b0;
+  --ide-red: #f14c4c;
+  --ide-yellow: #dcdcaa;
+  --ide-purple: #c586c0;
+  --ide-orange: #ce9178;
+  --ide-blue: #569cd6;
 
   --ide-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
-  --ide-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --ide-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Inter', sans-serif;
 
-  font: 14px/1.5 var(--ide-sans);
+  font: 13px/1.5 var(--ide-sans);
   color: var(--ide-text);
   background: var(--ide-bg);
   color-scheme: dark;
@@ -48,20 +52,26 @@ body,
   flex-direction: column;
 }
 
-/* 滚动条 */
+/* 滚动条：Trae 风格，极细半透明 */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--ide-border-light);
-  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--ide-text-dim);
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Element Plus 深色覆盖 */
+.el-button--primary {
+  --el-button-bg-color: var(--ide-accent) !important;
+  --el-button-border-color: var(--ide-accent) !important;
 }
 
 /* Element Plus 深色覆盖 */

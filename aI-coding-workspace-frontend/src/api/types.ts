@@ -166,6 +166,36 @@ export interface VibeConfirmResponse {
   result: Record<string, unknown> | null
 }
 
+export interface HarnessRun {
+  command: string
+  passed: boolean
+  return_code: number
+  stdout: string
+  stderr: string
+}
+
+export interface HarnessResult {
+  passed: boolean
+  commands: string[]
+  runs: HarnessRun[]
+  summary?: string
+  error?: string
+  diff_apply?: Record<string, unknown>
+}
+
+export interface ReviewFinding {
+  severity: 'blocker' | 'major' | 'minor' | string
+  dimension: string
+  message: string
+}
+
+export interface ReviewReport {
+  passed: boolean
+  summary: string
+  findings: ReviewFinding[]
+  raw?: string
+}
+
 export interface VibeApplyRequest {
   project_id: string
   diff: string

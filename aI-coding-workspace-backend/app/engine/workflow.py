@@ -7,7 +7,9 @@ from app.core.config import get_settings
 from app.engine.agents.coder import coder_agent
 from app.engine.agents.planner import planner_agent
 from app.engine.agents.qa import qa_agent
+from app.engine.agents.reviewer import reviewer_agent
 from app.engine.agents.router import router_agent
+from app.engine.agents.tester import tester_agent
 from app.engine.state import GraphState
 
 settings = get_settings()
@@ -16,22 +18,14 @@ settings = get_settings()
 def human_approval_node(
     state: GraphState,
 ) -> Command[Literal["coder_agent", "__end__"]]:
-    """Vibe Coding 人工确认节点。
-
-    这里是 HIL 闭环的关键：
-    1. planner_agent 先生成 proposed_plan。
-    2. interrupt() 持久化当前状态并暂停图执行。
-    3. 前端展示 proposed_plan，用户 Accept / Reject。
-    4. /api/vibe/confirm 调用 Command(resume=...) 恢复到此节点。
-    5. resume 的 payload 成为 interrupt() 返回值。
-    """
-
+    """Pause after planning so the user can approve the SDD plan."""
     resume_payload = interrupt(
         {
-            "type": "vibe_plan_approval",
+            "type": "sdd_plan_approval",
             "thread_id": state["thread_id"],
             "project_id": state["project_id"],
             "proposed_plan": state["proposed_plan"],
+            "sdd_spec": state.get("sdd_spec", {}),
         },
     )
 
@@ -58,6 +52,24 @@ def human_approval_node(
     )
 
 
+def route_after_review(state: GraphState) -> Literal["coder_agent", "__end__"]:
+    harness = state.get("harness_result") or {}
+    review = state.get("review_report") or {}
+    retry_count = int(state.get("retry_count", 0))
+    max_retries = int(state.get("max_retries", 2))
+    passed = bool(harness.get("passed")) and bool(review.get("passed"))
+    if passed or retry_count >= max_retries:
+        return END
+    return "coder_agent"
+
+
+def retry_counter_node(state: GraphState) -> dict:
+    return {
+        "retry_count": int(state.get("retry_count", 0)) + 1,
+        "current_node": "retry_counter_node",
+    }
+
+
 def build_workflow() -> StateGraph:
     builder = StateGraph(GraphState)
 
@@ -65,23 +77,28 @@ def build_workflow() -> StateGraph:
     builder.add_node("planner_agent", planner_agent)
     builder.add_node("human_approval_node", human_approval_node)
     builder.add_node("coder_agent", coder_agent)
+    builder.add_node("tester_agent", tester_agent)
+    builder.add_node("reviewer_agent", reviewer_agent)
+    builder.add_node("retry_counter_node", retry_counter_node)
     builder.add_node("qa_agent", qa_agent)
 
     builder.add_edge(START, "router_agent")
     builder.add_edge("planner_agent", "human_approval_node")
-    builder.add_edge("coder_agent", END)
+    builder.add_edge("coder_agent", "tester_agent")
+    builder.add_edge("tester_agent", "reviewer_agent")
+    builder.add_conditional_edges(
+        "reviewer_agent",
+        route_after_review,
+        {"coder_agent": "retry_counter_node", END: END},
+    )
+    builder.add_edge("retry_counter_node", "coder_agent")
     builder.add_edge("qa_agent", END)
 
     return builder
 
 
 async def compile_async_workflow():
-    """编译 LangGraph。
-
-    开发环境使用 AsyncSqliteSaver；生产多实例应替换为共享式 checkpointer。
-    注意：checkpointer 必须启用，否则 interrupt/resume 无法可靠恢复。
-    """
-
+    """Compile LangGraph with an async sqlite checkpointer for interrupt/resume."""
     from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
     settings.runtime_dir.mkdir(parents=True, exist_ok=True)
@@ -91,4 +108,3 @@ async def compile_async_workflow():
     checkpointer = await checkpointer_cm.__aenter__()
     graph = build_workflow().compile(checkpointer=checkpointer)
     return graph, checkpointer_cm
-

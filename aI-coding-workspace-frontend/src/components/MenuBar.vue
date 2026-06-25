@@ -136,7 +136,7 @@ const emit = defineEmits<{ view: [target: string] }>()
   display: flex;
   align-items: center;
   height: 28px;
-  background: var(--ide-bg-elevated);
+  background: var(--ide-bg-darker);
   padding: 0 4px;
   border-bottom: 1px solid var(--ide-border);
   flex-shrink: 0;
@@ -146,13 +146,15 @@ const emit = defineEmits<{ view: [target: string] }>()
 .menu-item {
   position: relative;
   padding: 0 10px;
-  height: 100%;
+  height: 20px;
+  margin: 2px 1px;
   display: flex;
   align-items: center;
   font-size: 12px;
   color: var(--ide-text);
   cursor: pointer;
   border-radius: 4px;
+  transition: background 0.12s;
 }
 
 .menu-item:hover { background: var(--ide-bg-hover); }

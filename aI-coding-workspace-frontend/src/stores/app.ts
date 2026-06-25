@@ -8,10 +8,12 @@ import {
   type AgentConfigCreate,
   type FileContentResponse,
   type FileTreeNode,
+  type HarnessResult,
   type LangGraphEvent,
   type ModelConfig,
   type ModelConfigCreate,
   type ProjectInfo,
+  type ReviewReport,
 } from '@/api'
 
 export interface ChatMessage {
@@ -28,6 +30,9 @@ export interface VibePlan {
   proposedPlan: string
   diff?: string
   feedback?: string
+  harness?: HarnessResult
+  review?: ReviewReport
+  retryCount?: number
 }
 
 export const useAppStore = defineStore('app', () => {
@@ -167,6 +172,24 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
+  function openVirtualFile(path: string, content: string, language: string = 'markdown') {
+    const file = {
+      path,
+      content,
+      language,
+      size: content.length,
+    } as any
+    const existing = openTabs.value.find((t) => t.path === path)
+    if (existing) {
+      existing.content = content
+    } else {
+      openTabs.value.push(file)
+      if (openTabs.value.length > 8) openTabs.value.shift()
+    }
+    currentFile.value = file
+    activeTabPath.value = path
+  }
+
   function closeTab(filePath: string) {
     const idx = openTabs.value.findIndex((t) => t.path === filePath)
     if (idx === -1) return
@@ -198,6 +221,24 @@ export const useAppStore = defineStore('app', () => {
     uploading.value = true
     try {
       const res = await api.uploadProject(file)
+      ElMessage.success(res.message)
+      await loadProjects()
+      await selectProject(res.id)
+    } catch {
+      // 错误已在 interceptor 处理
+    } finally {
+      uploading.value = false
+    }
+  }
+
+  async function uploadFolder(fileList: File[]) {
+    if (!fileList.length) return
+    uploading.value = true
+    try {
+      // 从第一个文件的 webkitRelativePath 提取文件夹名
+      const firstFile = fileList[0] as File & { webkitRelativePath?: string }
+      const folderName = firstFile.webkitRelativePath?.split('/')[0] || 'uploaded-folder'
+      const res = await api.uploadFolder(fileList, folderName)
       ElMessage.success(res.message)
       await loadProjects()
       await selectProject(res.id)
@@ -471,10 +512,17 @@ export const useAppStore = defineStore('app', () => {
       })
 
       if (approved && res.result) {
-        const artifacts = (res.result as Record<string, Record<string, unknown>>)
-          .generated_artifacts
+        const result = res.result as Record<string, unknown>
+        const artifacts = result.generated_artifacts as Record<string, unknown> | undefined
         vibePlan.value.diff =
           (artifacts?.diff as string) || (artifacts?.['diff'] as string) || ''
+        vibePlan.value.harness =
+          (artifacts?.harness as HarnessResult) ||
+          (result.harness_result as HarnessResult | undefined)
+        vibePlan.value.review =
+          (artifacts?.review as ReviewReport) ||
+          (result.review_report as ReviewReport | undefined)
+        vibePlan.value.retryCount = result.retry_count as number | undefined
         vibePlan.value.status = 'completed'
       }
     } finally {
@@ -570,10 +618,12 @@ export const useAppStore = defineStore('app', () => {
     selectProject,
     loadFileTree,
     openFile,
+    openVirtualFile,
     switchTab,
     closeTab,
     saveFile,
     uploadProject,
+    uploadFolder,
     deleteProject,
     indexProject,
     runSearch,

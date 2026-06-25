@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import * as monaco from 'monaco-editor'
+import { api } from '@/api'
+import { useAppStore } from '@/stores/app'
 
 interface Props {
   /** 普通代码模式：显示的代码内容 */
@@ -11,12 +13,15 @@ interface Props {
   /** Diff 模式：修改后内容 */
   modified?: string
   readOnly?: boolean
+  /** 当前文件路径（用于补全上下文） */
+  filePath?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
   code: '',
   language: 'plaintext',
   readOnly: true,
+  filePath: '',
 })
 
 const emit = defineEmits<{
@@ -28,6 +33,88 @@ const isDiff = computed(() => props.original !== undefined && props.modified !==
 
 const containerRef = ref<HTMLDivElement>()
 let editor: monaco.editor.IStandaloneCodeEditor | monaco.editor.IStandaloneDiffEditor | null = null
+
+// ===== AI 代码补全 =====
+const store = useAppStore()
+let completionProvider: monaco.IDisposable | null = null
+let inlineCompletionProvider: monaco.IDisposable | null = null
+let lastRequestKey = '' // 去重：同一位置短时间不重复请求
+
+function setupCompletionProvider() {
+  if (inlineCompletionProvider) return
+
+  inlineCompletionProvider = monaco.languages.registerInlineCompletionsProvider(
+    { pattern: '**' },
+    {
+      async provideInlineCompletions(model, position, context, token) {
+        // 只对可编辑的编辑器生效
+        if (props.readOnly || isDiff.value) return { items: [] }
+
+        const lineContent = model.getLineContent(position.lineNumber)
+        const textBeforeCursor = lineContent.substring(0, position.column - 1)
+
+        // 触发条件：光标前有内容且以这些字符结尾，或手动触发
+        const triggerChars = ['.', ' ', '(', '=', ':', '\t', "'", '"', ',']
+        const shouldTrigger =
+          context.triggerKind === monaco.languages.InlineCompletionTriggerKind.Automatic
+            ? textBeforeCursor.length > 0 &&
+              triggerChars.some((c) => textBeforeCursor.endsWith(c)) &&
+              textBeforeCursor.trim().length > 1
+            : true
+
+        if (!shouldTrigger) return { items: [] }
+
+        const fullText = model.getValue()
+        const offset = model.getOffsetAt(position)
+        const prefix = fullText.substring(0, offset)
+        const suffix = fullText.substring(offset)
+
+        // 去重：避免相同上下文频繁请求
+        const requestKey = `${props.filePath}:${offset}:${textBeforeCursor.slice(-20)}`
+        if (requestKey === lastRequestKey) return { items: [] }
+        lastRequestKey = requestKey
+
+        try {
+          const res = await api.completeCode({
+            prefix,
+            suffix,
+            language: props.language,
+            file_path: props.filePath,
+            model_id: store.currentModelId || undefined,
+            temperature: 0.2,
+            max_tokens: 128,
+          })
+
+          if (token.isCancellationRequested || !res.text?.trim()) {
+            return { items: [] }
+          }
+
+          return {
+            items: [
+              {
+                insertText: res.text,
+                range: {
+                  startLineNumber: position.lineNumber,
+                  startColumn: position.column,
+                  endLineNumber: position.lineNumber,
+                  endColumn: position.column,
+                },
+              },
+            ],
+          }
+        } catch {
+          return { items: [] }
+        }
+      },
+      freeInlineCompletions() {},
+    },
+  )
+}
+
+function disposeCompletionProvider() {
+  inlineCompletionProvider?.dispose()
+  inlineCompletionProvider = null
+}
 
 function defineTheme() {
   monaco.editor.defineTheme('ide-dark', {
@@ -79,6 +166,12 @@ function createEditor() {
       lineNumbers: 'on',
       folding: true,
       wordWrap: 'on',
+      // 启用 inline suggestions（AI 补全幽灵文本）
+      'inlineSuggest.enabled': true,
+      quickSuggestions: { other: true, comments: false, strings: false },
+      suggestOnTriggerCharacters: true,
+      tabCompletion: 'on',
+      wordBasedSuggestions: 'off',
     })
     // 监听内容变更（编辑模式）
     if (!props.readOnly) {
@@ -121,6 +214,24 @@ function createEditor() {
         }
       },
     })
+
+    // 添加手动触发 AI 补全的快捷键：Alt + \
+    codeEditor.addAction({
+      id: 'trigger-ai-completion',
+      label: '触发 AI 代码补全',
+      keybindings: [monaco.KeyMod.Alt | monaco.KeyCode.Backslash],
+      run: (ed) => {
+        // 通过临时修改内容触发 inline suggest
+        const position = ed.getPosition()
+        if (position) {
+          // 使用官方命令触发
+          ed.trigger('ai-completion', 'editor.action.inlineSuggest.trigger', {})
+        }
+      },
+    })
+
+    // 注册 AI 补全 provider（只注册一次）
+    setupCompletionProvider()
   }
 }
 
@@ -137,6 +248,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   disposeEditor()
+  disposeCompletionProvider()
 })
 
 // 内容变化时重建（简化处理）

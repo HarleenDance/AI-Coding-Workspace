@@ -49,13 +49,14 @@ const activeTab = ref<'chat' | 'vibe' | 'events'>('chat')
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: var(--ide-bg);
+  background: var(--ide-bg-elevated);
 }
 
 .tab-header {
   display: flex;
   border-bottom: 1px solid var(--ide-border);
-  background: var(--ide-bg-elevated);
+  background: var(--ide-bg-darker);
+  height: 36px;
 }
 
 .tab-btn {
@@ -63,26 +64,34 @@ const activeTab = ref<'chat' | 'vibe' | 'events'>('chat')
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 10px 0;
+  gap: 5px;
+  padding: 0;
   background: none;
   border: none;
   color: var(--ide-text-dim);
   cursor: pointer;
-  font-size: 13px;
-  transition: all 0.2s;
-  border-bottom: 2px solid transparent;
+  font-size: 12px;
+  transition: all 0.15s;
+  position: relative;
 }
 
 .tab-btn:hover {
   color: var(--ide-text);
-  background: var(--ide-bg-hover);
 }
 
 .tab-btn.active {
-  color: var(--ide-accent);
-  border-bottom-color: var(--ide-accent);
-  background: var(--ide-bg-active);
+  color: var(--ide-text-bright);
+}
+
+.tab-btn.active::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 20%;
+  right: 20%;
+  height: 2px;
+  background: var(--ide-accent);
+  border-radius: 2px 2px 0 0;
 }
 
 .tab-body {

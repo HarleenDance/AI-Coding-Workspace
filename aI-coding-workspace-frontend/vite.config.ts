@@ -16,6 +16,7 @@ export default defineConfig({
       '/api': {
         target: 'http://127.0.0.1:8000',
         changeOrigin: true,
+        ws: true,
       },
     },
   },
@@ -26,10 +27,10 @@ export default defineConfig({
     rollupOptions: {
       output: {
         // 拆分大依赖，减少首屏加载体积
-        manualChunks: {
-          'monaco': ['monaco-editor'],
-          'element': ['element-plus', '@element-plus/icons-vue'],
-          'vue-vendor': ['vue', 'vue-router', 'pinia', 'vue-i18n'],
+        manualChunks(id) {
+          if (id.includes('monaco-editor')) return 'monaco'
+          if (id.includes('element-plus') || id.includes('@element-plus')) return 'element'
+          if (id.includes('node_modules/vue') || id.includes('vue-router') || id.includes('pinia') || id.includes('vue-i18n')) return 'vue-vendor'
         },
       },
     },

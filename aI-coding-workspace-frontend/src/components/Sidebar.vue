@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { ElMessage } from 'element-plus'
 import { useAppStore } from '@/stores/app'
 import FileTreeNodeItem from './FileTreeNodeItem.vue'
 
@@ -8,6 +9,8 @@ const { t } = useI18n()
 const store = useAppStore()
 const collapsed = ref(false)
 const fileInput = ref<HTMLInputElement>()
+const folderInput = ref<HTMLInputElement>()
+const dragOver = ref(false)
 
 onMounted(() => {
   store.loadProjects()
@@ -17,11 +20,35 @@ function triggerUpload() {
   fileInput.value?.click()
 }
 
+function triggerFolderUpload() {
+  folderInput.value?.click()
+}
+
 async function handleUpload(e: Event) {
   const target = e.target as HTMLInputElement
   if (!target.files?.length) return
   await store.uploadProject(target.files[0])
   target.value = ''
+}
+
+async function handleFolderUpload(e: Event) {
+  const target = e.target as HTMLInputElement
+  if (!target.files?.length) return
+  const fileList = Array.from(target.files)
+  await store.uploadFolder(fileList)
+  target.value = ''
+}
+
+// 拖拽上传
+function onDrop(e: DragEvent) {
+  dragOver.value = false
+  if (!e.dataTransfer?.files.length) return
+  const file = e.dataTransfer.files[0]
+  if (file.name.endsWith('.zip')) {
+    store.uploadProject(file)
+  } else {
+    ElMessage.info('请拖入 .zip 文件，或使用「上传文件夹」按钮')
+  }
 }
 </script>
 
@@ -62,17 +89,59 @@ async function handleUpload(e: Event) {
         style="display: none"
         @change="handleUpload"
       />
-      <el-button
-        type="primary"
-        size="small"
-        plain
-        class="upload-btn"
-        :loading="store.uploading"
+      <input
+        ref="folderInput"
+        type="file"
+        style="display: none"
+        webkitdirectory
+        directory
+        multiple
+        @change="handleFolderUpload"
+      />
+
+      <!-- 拖拽区域 -->
+      <div
+        class="drop-zone"
+        :class="{ active: dragOver, loading: store.uploading }"
         @click="triggerUpload"
+        @dragover.prevent="dragOver = true"
+        @dragleave.prevent="dragOver = false"
+        @drop.prevent="onDrop"
       >
-        <el-icon><Upload /></el-icon>
-        {{ t('sidebar.uploadZip') }}
-      </el-button>
+        <el-icon :size="20" class="drop-icon">
+          <Upload v-if="!store.uploading" />
+          <Loading v-else />
+        </el-icon>
+        <span class="drop-text">
+          {{ store.uploading ? '上传中...' : '拖拽 ZIP 到此处' }}
+        </span>
+      </div>
+
+      <!-- 两个按钮并排 -->
+      <div class="upload-buttons">
+        <el-button
+          size="small"
+          plain
+          class="upload-btn"
+          :loading="store.uploading"
+          @click="triggerUpload"
+        >
+          <el-icon><Upload /></el-icon>
+          <span>ZIP</span>
+        </el-button>
+        <el-button
+          size="small"
+          plain
+          class="upload-btn"
+          :loading="store.uploading"
+          @click="triggerFolderUpload"
+        >
+          <el-icon><FolderOpened /></el-icon>
+          <span>文件夹</span>
+        </el-button>
+      </div>
+
+      <!-- 索引按钮 -->
       <el-button
         v-if="store.projectId"
         size="small"
@@ -116,7 +185,6 @@ async function handleUpload(e: Event) {
 .sidebar {
   width: 260px;
   background: var(--ide-bg-elevated);
-  border-right: 1px solid var(--ide-border);
   display: flex;
   flex-direction: column;
   transition: width 0.2s;
@@ -131,7 +199,7 @@ async function handleUpload(e: Event) {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 8px;
+  padding: 8px 10px;
   border-bottom: 1px solid var(--ide-border);
 }
 .project-select {
@@ -139,16 +207,80 @@ async function handleUpload(e: Event) {
 }
 
 .upload-section {
-  padding: 8px;
+  padding: 10px;
   border-bottom: 1px solid var(--ide-border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* 拖拽区域 */
+.drop-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 16px 8px;
+  border: 1.5px dashed var(--ide-border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: var(--ide-text-dim);
+  background: var(--ide-bg);
+}
+.drop-zone:hover {
+  border-color: var(--ide-accent);
+  color: var(--ide-accent);
+  background: rgba(137, 180, 250, 0.04);
+}
+.drop-zone.active {
+  border-color: var(--ide-accent);
+  border-style: solid;
+  background: rgba(137, 180, 250, 0.1);
+  color: var(--ide-accent);
+  transform: scale(1.02);
+}
+.drop-zone.loading {
+  pointer-events: none;
+  opacity: 0.7;
+}
+.drop-icon {
+  transition: transform 0.2s;
+}
+.drop-zone:hover .drop-icon {
+  transform: translateY(-2px);
+}
+.drop-text {
+  font-size: 11px;
+  font-weight: 500;
+}
+
+/* 按钮并排 */
+.upload-buttons {
+  display: flex;
+  gap: 6px;
 }
 .upload-btn {
-  width: 100%;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin: 0 !important;
 }
+.upload-btn :deep(span) {
+  font-size: 12px;
+}
+
+/* 索引按钮 */
 .index-btn {
   width: 100%;
-  margin-top: 6px;
-  margin-left: 0;
+  margin: 0 !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
 }
 
 .sidebar-body {

@@ -8,6 +8,10 @@ import Sidebar from '@/components/Sidebar.vue'
 import CodePanel from '@/components/CodePanel.vue'
 import AIPanel from '@/components/AIPanel.vue'
 import CommandPalette from '@/components/CommandPalette.vue'
+import TerminalPanel from '@/components/TerminalPanel.vue'
+import YuquePanel from '@/components/YuquePanel.vue'
+import BrowserPanel from '@/components/BrowserPanel.vue'
+import GitPanel from '@/components/GitPanel.vue'
 import type { ActivityView } from '@/components/ActivityBar.vue'
 
 const { t } = useI18n()
@@ -18,6 +22,10 @@ const store = useAppStore()
 const activityView = ref<ActivityView>('explorer')
 const cmdVisible = ref(false)
 const isMobile = ref(false)
+const terminalVisible = ref(false)
+const terminalHeight = ref(240)
+const editorMode = ref<'code' | 'browser'>('code')
+const browserVisible = ref(false)
 
 function updateMobile() {
   isMobile.value = window.innerWidth <= 768
@@ -35,12 +43,54 @@ function onGlobalKeydown(e: KeyboardEvent) {
     e.preventDefault()
     cmdVisible.value = true
   }
+  // Ctrl+`: 切换终端
+  if ((e.ctrlKey || e.metaKey) && e.key === '`') {
+    e.preventDefault()
+    terminalVisible.value = !terminalVisible.value
+  }
 }
 
 function handleCommandView(target: string) {
   if (target.startsWith('view-')) {
     activityView.value = target.replace('view-', '') as ActivityView
   }
+}
+
+// 语雀文档导入到项目
+async function handleYuqueImport(doc: { fileName: string; content: string }) {
+  // 把导入的文档以虚拟文件方式打开（不实际写库，只在前端 Tab 展示）
+  if (store.projectId) {
+    try {
+      // 尝试写入项目文件系统
+      await store.importExternalFile(doc.fileName, doc.content)
+    } catch {
+      // 降级：直接作为新 Tab 打开
+      store.openVirtualFile(`语雀导入/${doc.fileName}`, doc.content, 'markdown')
+    }
+  } else {
+    store.openVirtualFile(`语雀导入/${doc.fileName}`, doc.content, 'markdown')
+  }
+}
+
+// 终端面板拖拽调整高度
+function startResize(e: MouseEvent) {
+  e.preventDefault()
+  const startY = e.clientY
+  const startHeight = terminalHeight.value
+
+  const onMove = (ev: MouseEvent) => {
+    const delta = startY - ev.clientY
+    const newHeight = Math.max(100, Math.min(window.innerHeight - 200, startHeight + delta))
+    terminalHeight.value = newHeight
+  }
+  const onUp = () => {
+    document.removeEventListener('mousemove', onMove)
+    document.removeEventListener('mouseup', onUp)
+    document.body.style.cursor = ''
+  }
+  document.addEventListener('mousemove', onMove)
+  document.addEventListener('mouseup', onUp)
+  document.body.style.cursor = 'ns-resize'
 }
 
 // 移动端视图
@@ -110,7 +160,7 @@ onBeforeUnmount(() => {
 
     <!-- 主体：活动栏 + 侧栏 + 编辑器 + AI -->
     <div class="main-body">
-      <ActivityBar v-model="activityView" />
+      <ActivityBar v-model="activityView" @toggle-terminal="terminalVisible = !terminalVisible" />
 
       <!-- 侧栏内容根据 activityView 切换 -->
       <div v-show="activityView === 'explorer'" class="side-panel">
@@ -135,10 +185,10 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <div v-show="activityView === 'git'" class="side-panel">
-        <div class="side-header">{{ t('git.title') }}</div>
-        <div class="empty-side">
-          <el-text size="small" type="info">{{ t('git.noChanges') }}</el-text>
-        </div>
+        <GitPanel />
+      </div>
+      <div v-show="activityView === 'yuque'" class="side-panel">
+        <YuquePanel @import="handleYuqueImport" />
       </div>
       <div v-show="activityView === 'settings'" class="side-panel">
         <div class="side-header">{{ t('settings.title') }}</div>
@@ -174,9 +224,49 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <!-- 编辑器 -->
+      <!-- 编辑器 + 浏览器 + 终端 -->
       <div class="editor-container">
-        <CodePanel />
+        <!-- 编辑器/浏览器切换 Tab -->
+        <div class="editor-switcher">
+          <div
+            class="switcher-tab"
+            :class="{ active: editorMode === 'code' }"
+            @click="editorMode = 'code'"
+          >
+            <el-icon><Document /></el-icon>
+            <span>编辑器</span>
+          </div>
+          <div
+            class="switcher-tab"
+            :class="{ active: editorMode === 'browser' }"
+            @click="editorMode = 'browser'"
+          >
+            <el-icon><Monitor /></el-icon>
+            <span>浏览器</span>
+          </div>
+        </div>
+
+        <div class="editor-main" v-show="editorMode === 'code'">
+          <CodePanel />
+        </div>
+        <div class="editor-main" v-show="editorMode === 'browser'">
+          <BrowserPanel v-model:visible="browserVisible" :visible="true" />
+        </div>
+
+        <!-- 可拖拽分隔条 -->
+        <div
+          v-if="terminalVisible && editorMode === 'code'"
+          class="terminal-resizer"
+          @mousedown="startResize"
+        ></div>
+        <!-- 终端面板 -->
+        <div
+          v-if="terminalVisible && editorMode === 'code'"
+          class="terminal-wrapper"
+          :style="{ height: terminalHeight + 'px' }"
+        >
+          <TerminalPanel v-model:visible="terminalVisible" />
+        </div>
       </div>
 
       <!-- AI 面板 -->
@@ -224,35 +314,37 @@ onBeforeUnmount(() => {
 /* ===== 桌面端 ===== */
 .top-section {
   flex-shrink: 0;
+  background: var(--ide-bg-darker);
 }
 
 .title-bar {
   display: flex;
   align-items: center;
-  height: 36px;
+  height: 32px;
   padding: 0 12px;
-  background: var(--ide-bg);
-  border-bottom: 1px solid var(--ide-border);
-  gap: 12px;
+  background: var(--ide-bg-darker);
+  gap: 10px;
 }
 
 .title-left {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   flex-shrink: 0;
 }
 
 .app-name {
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--ide-text-bright);
   white-space: nowrap;
+  letter-spacing: 0.3px;
 }
 
 .sep {
   color: var(--ide-text-dim);
   font-size: 12px;
+  opacity: 0.5;
 }
 
 .project-name {
@@ -269,6 +361,10 @@ onBeforeUnmount(() => {
 .search-input {
   max-width: 400px;
   width: 100%;
+}
+.search-input :deep(.el-input__wrapper) {
+  background: var(--ide-bg-elevated);
+  border-radius: 6px;
 }
 
 .title-right {
@@ -296,12 +392,14 @@ onBeforeUnmount(() => {
   flex: 1;
   display: flex;
   overflow: hidden;
+  background: var(--ide-bg);
 }
 
 .side-panel {
   flex-shrink: 0;
   border-right: 1px solid var(--ide-border);
   overflow: hidden;
+  background: var(--ide-bg-elevated);
 }
 
 .side-header {
@@ -363,13 +461,75 @@ onBeforeUnmount(() => {
   flex: 1;
   overflow: hidden;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 编辑器/浏览器切换 Tab */
+.editor-switcher {
+  display: flex;
+  background: var(--ide-bg-darker);
+  border-bottom: 1px solid var(--ide-border);
+  flex-shrink: 0;
+  height: 30px;
+  padding: 0 4px;
+  align-items: center;
+  gap: 2px;
+}
+
+.switcher-tab {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  height: 24px;
+  font-size: 12px;
+  color: var(--ide-text-dim);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.15s;
+}
+
+.switcher-tab:hover {
+  color: var(--ide-text);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.switcher-tab.active {
+  color: var(--ide-text-bright);
+  background: var(--ide-bg-active);
+}
+
+.editor-main {
+  flex: 1 1 auto;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.terminal-resizer {
+  height: 4px;
+  background: var(--ide-border);
+  cursor: ns-resize;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+
+.terminal-resizer:hover {
+  background: var(--ide-accent);
+}
+
+.terminal-wrapper {
+  flex-shrink: 0;
+  overflow: hidden;
+  border-top: 1px solid var(--ide-border);
 }
 
 .ai-container {
-  width: 420px;
+  width: 400px;
   flex-shrink: 0;
   border-left: 1px solid var(--ide-border);
   overflow: hidden;
+  background: var(--ide-bg-elevated);
 }
 
 /* ===== 移动端 ===== */
