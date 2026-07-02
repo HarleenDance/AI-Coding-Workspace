@@ -5,7 +5,8 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
 from app.core.dependencies import DbSession
-from app.engine.agents.llm import DeepSeekClient
+from app.engine.agents.multi_model import MultiModelClient, get_model_config
+from app.engine.context import build_chat_prompt
 from app.engine.vector.embeddings import EmbeddingClient
 from app.engine.vector.retriever import retrieve_code_context
 from app.engine.workflow import compile_async_workflow
@@ -63,10 +64,9 @@ async def chat_stream(
     payload: ChatStreamRequest,
     session: DbSession,
 ) -> StreamingResponse:
-    """流式代码问答 SSE 接口，支持多轮对话上下文。"""
+    """Stream code Q&A with budgeted history and retrieved code context."""
 
     async def event_generator():
-        # 1. 检索代码上下文
         yield _sse({"type": "status", "message": "正在检索代码上下文..."})
 
         context_files = await retrieve_code_context(
@@ -76,68 +76,62 @@ async def chat_stream(
             embedding_client=EmbeddingClient(),
         )
 
-        context_text = "\n\n".join(
-            f"### {item['file_path']}\n```{item['language']}\n{item['content']}\n```"
-            for item in context_files
-        )
-
-        yield _sse({
-            "type": "context",
-            "files": [item["file_path"] for item in context_files],
-        })
-
-        # 2. 加载智能体配置（如果有）
         system_prompt = (
             "你是代码库问答 Agent。请基于检索到的代码上下文回答用户问题。"
-            "如果上下文不足以回答，请说明并给出通用建议。"
-            "用中文回答，代码用 markdown 代码块。"
+            "如果上下文不足以回答，请说明缺口并给出下一步排查建议。"
+            "用中文回答，代码使用 markdown 代码块。"
         )
         temperature = 0.3
 
         if payload.agent_id:
             from app.models.agent_config import AgentConfig
+
             agent = await session.get(AgentConfig, payload.agent_id)
             if agent:
                 system_prompt = agent.system_prompt
                 temperature = agent.temperature
 
-        # 3. 构建多轮对话消息
-        messages = [
-            {
-                "role": "system",
-                "content": system_prompt,
-            },
-        ]
+        managed_prompt = build_chat_prompt(
+            system_prompt=system_prompt,
+            question=payload.question,
+            context_files=context_files,
+            history=payload.history,
+        )
 
-        # 加入历史对话（最近 10 轮）
-        for item in payload.history[-10:]:
-            messages.append({"role": item.role, "content": item.content})
-
-        # 加入当前问题 + 检索上下文
-        messages.append(
+        yield _sse(
             {
-                "role": "user",
-                "content": f"问题：{payload.question}\n\n检索到的代码上下文：\n{context_text}",
+                "type": "context",
+                "files": managed_prompt.diagnostics["included_paths"],
+                "budget": managed_prompt.diagnostics,
             }
         )
 
-        # 3. 流式输出 LLM 回复
         yield _sse({"type": "status", "message": "AI 思考中..."})
 
-        # 加载模型配置（优先 model_id > 默认 > 环境变量 DeepSeek）
-        from app.engine.agents.multi_model import MultiModelClient, get_model_config
-        model_config = await get_model_config(session, str(payload.model_id) if payload.model_id else None)
+        model_config = await get_model_config(
+            session,
+            str(payload.model_id) if payload.model_id else None,
+        )
         llm = MultiModelClient(model_config)
         full_answer = ""
         try:
-            async for delta in llm.stream_chat(messages=messages, temperature=temperature):
+            async for delta in llm.stream_chat(
+                messages=managed_prompt.messages,
+                temperature=temperature,
+            ):
                 full_answer += delta["content"]
                 yield _sse({"type": "token", "content": delta["content"]})
-        except Exception as e:
-            yield _sse({"type": "error", "message": str(e)})
+        except Exception as exc:
+            yield _sse({"type": "error", "message": str(exc)})
             return
 
-        yield _sse({"type": "done", "answer": full_answer})
+        yield _sse(
+            {
+                "type": "done",
+                "answer": full_answer,
+                "budget": managed_prompt.diagnostics,
+            }
+        )
 
     return StreamingResponse(
         event_generator(),
@@ -150,5 +144,4 @@ async def chat_stream(
 
 
 def _sse(data: dict) -> str:
-    """格式化为 SSE 数据行。"""
     return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"

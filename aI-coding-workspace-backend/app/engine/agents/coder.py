@@ -1,12 +1,11 @@
 from app.engine.agents.llm import DeepSeekClient
+from app.engine.context import render_code_context
 from app.engine.state import GraphState
 
 
 def _context_text(state: GraphState) -> str:
-    return "\n\n".join(
-        f"### {item['file_path']}\n```{item['language']}\n{item['content']}\n```"
-        for item in state.get("context_files", [])
-    )
+    context, _ = render_code_context(state.get("context_files", []))
+    return context
 
 
 async def coder_agent(state: GraphState) -> dict:

@@ -7,7 +7,7 @@
 from collections.abc import AsyncGenerator
 from typing import Any
 
-from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,6 +28,8 @@ def _to_langchain_messages(messages: list[ChatMessagePayload]) -> list[BaseMessa
         content = message["content"]
         if role == "system":
             converted.append(SystemMessage(content=content))
+        elif role == "assistant":
+            converted.append(AIMessage(content=content))
         else:
             converted.append(HumanMessage(content=content))
     return converted

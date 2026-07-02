@@ -1,12 +1,10 @@
 from app.engine.agents.llm import DeepSeekClient
+from app.engine.context import render_code_context
 from app.engine.state import GraphState
 
 
 async def qa_agent(state: GraphState) -> dict:
-    context = "\n\n".join(
-        f"### {item['file_path']}\n```{item['language']}\n{item['content']}\n```"
-        for item in state.get("context_files", [])
-    )
+    context, context_diag = render_code_context(state.get("context_files", []))
     messages = [
         {
             "role": "system",
@@ -26,6 +24,9 @@ async def qa_agent(state: GraphState) -> dict:
         answer = f"模型不可用，无法完成代码问答：{exc}"
 
     return {
-        "generated_artifacts": {"answer": answer},
+        "generated_artifacts": {
+            "answer": answer,
+            "context_budget": context_diag,
+        },
         "current_node": "qa_agent",
     }
