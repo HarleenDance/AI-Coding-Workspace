@@ -1,4 +1,5 @@
 import http from './http'
+import { isStaticDemo, streamDemoChat, subscribeDemoVibeEvents } from './demo'
 import type {
   AgentConfig,
   AgentConfigCreate,
@@ -177,6 +178,10 @@ export const api = {
     },
     onEvent: (data: { type: string; [key: string]: unknown }) => void,
   ): AbortController {
+    if (isStaticDemo()) {
+      return streamDemoChat(payload, onEvent)
+    }
+
     const controller = new AbortController()
 
     const run = async () => {
@@ -309,6 +314,10 @@ export function subscribeVibeEvents(
   onEvent: (event: unknown) => void,
   onError?: (err: unknown) => void,
 ): () => void {
+  if (isStaticDemo()) {
+    return subscribeDemoVibeEvents(onEvent)
+  }
+
   // 使用 fetch 处理 SSE，以便手动解析 text/event-stream
   const controller = new AbortController()
 
