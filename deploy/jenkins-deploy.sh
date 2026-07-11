@@ -60,10 +60,15 @@ step "Service status"
 docker compose ps
 
 step "Backend health check"
+# Jenkins runs inside Docker; use host.docker.internal to reach host-mapped ports
+HEALTH_URL="http://host.docker.internal:8000/api/health/db"
+if ! getent hosts host.docker.internal >/dev/null 2>&1; then
+  HEALTH_URL="http://localhost:8000/api/health/db"
+fi
 for i in $(seq 1 30); do
-  if curl -fsS http://localhost:8000/api/health/db >/dev/null; then
-    echo "Backend is healthy: http://localhost:8000/api/health/db"
-    echo "Frontend: http://localhost/"
+  if curl -fsS "$HEALTH_URL" >/dev/null; then
+    echo "Backend is healthy: $HEALTH_URL"
+    echo "Frontend: http://localhost:3000/"
     echo "Backend API: http://localhost:8000/api"
     echo "Database: internal (db:5432)"
     exit 0

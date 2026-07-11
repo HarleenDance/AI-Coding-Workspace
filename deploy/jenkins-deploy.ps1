@@ -71,7 +71,11 @@ Write-Step "Service status"
 docker compose ps
 
 Write-Step "Backend health check"
-$HealthUrl = "http://localhost:8000/api/health/db"
+# Jenkins runs inside Docker; use host.docker.internal to reach host-mapped ports
+$HealthUrl = "http://host.docker.internal:8000/api/health/db"
+if (-not (Test-Connection -ComputerName "host.docker.internal" -Count 1 -Quiet -ErrorAction SilentlyContinue)) {
+  $HealthUrl = "http://localhost:8000/api/health/db"
+}
 $Healthy = $false
 for ($i = 1; $i -le 30; $i++) {
   try {
