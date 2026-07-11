@@ -95,4 +95,4 @@ if (-not $Healthy) {
 Write-Step "Deployment finished"
 Write-Host "Frontend: http://localhost/" -ForegroundColor Green
 Write-Host "Backend API: http://localhost:8000/api" -ForegroundColor Green
-Write-Host "Database: localhost:5433" -ForegroundColor Green
+Write-Host "Database: internal (db:5432)" -ForegroundColor Green

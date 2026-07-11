@@ -65,7 +65,7 @@ for i in $(seq 1 30); do
     echo "Backend is healthy: http://localhost:8000/api/health/db"
     echo "Frontend: http://localhost/"
     echo "Backend API: http://localhost:8000/api"
-    echo "Database: localhost:5433"
+    echo "Database: internal (db:5432)"
     exit 0
   fi
   sleep 3
