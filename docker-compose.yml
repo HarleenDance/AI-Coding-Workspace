@@ -11,6 +11,8 @@ services:
     environment:
       POSTGRES_PASSWORD: ${DB_PASSWORD:-123456}
       POSTGRES_DB: ai_workspace_db
+      # 允许 Docker 网络内的容器无需密码认证连接
+      POSTGRES_HOST_AUTH_METHOD: trust
     # 不映射到宿主机，后端通过 Docker 内部网络 db:5432 访问
     expose:
       - "5432"
