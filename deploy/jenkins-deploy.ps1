@@ -60,6 +60,9 @@ docker build @BuildArgs -f deploy/backend.Dockerfile -t $BackendImage aI-coding-
 Write-Step "Building frontend image"
 docker build @BuildArgs -t $FrontendImage aI-coding-workspace-frontend
 
+Write-Step "Cleaning up old containers"
+docker rm -f ai-ide-db ai-ide-backend ai-ide-frontend 2>$null | Out-Null
+
 Write-Step "Starting services"
 docker compose up -d db
 docker compose up -d backend frontend

@@ -49,6 +49,9 @@ docker build "${BUILD_ARGS[@]}" -f deploy/backend.Dockerfile -t "$BACKEND_IMAGE"
 step "Building frontend image"
 docker build "${BUILD_ARGS[@]}" -t "$FRONTEND_IMAGE" aI-coding-workspace-frontend
 
+step "Cleaning up old containers"
+docker rm -f ai-ide-db ai-ide-backend ai-ide-frontend 2>/dev/null || true
+
 step "Starting services"
 docker compose up -d db
 docker compose up -d backend frontend
